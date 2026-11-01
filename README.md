@@ -81,13 +81,12 @@ The frontend will run on `http://localhost:5173`
 3. Get your connection string
 4. Update `MONGODB_URI` in `backend/.env`
 
-## 🔐 Admin Credentials
+## 🔐 Admin Access
 
-Default admin login:
-- **Email**: sanketbhujbal205@gmail.com
-- **Password**: Sanket@123
+Admin credentials are configured via environment variables — never hardcoded.
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in your `backend/.env` file (see `.env.example` for the template).
 
-To change credentials, update the `.env` file in the backend folder.
+To access the admin panel, use the credentials you configured in your `.env`.
 
 ## 📡 API Endpoints
 
@@ -149,9 +148,11 @@ PORT=5000
 MONGODB_URI=mongodb://localhost:27017/portfolio
 JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
 
-ADMIN_EMAIL=sanketbhujbal205@gmail.com
-ADMIN_PASSWORD=Sanket@123
+ADMIN_EMAIL=your_email@example.com
+ADMIN_PASSWORD=your_secure_password
 ```
+
+> Copy `backend/.env.example` to `backend/.env` and fill in your own values.
 
 ## 🚀 Deployment
 
