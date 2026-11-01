@@ -125,11 +125,12 @@ router.post('/', authMiddleware, async (req, res) => {
     const saved = await project.save();
     console.log('✅ Project saved  id:', saved._id);
 
-    const syncResult = await ragSync.syncAfterCreate('project').catch(e => ({
-      success: false, error: e.message
-    }));
+    // Respond immediately — RAG sync runs in the background (non-blocking)
+    res.status(201).json({ ...saved.toObject(), ragSync: { queued: true } });
 
-    res.status(201).json({ ...saved.toObject(), ragSync: _syncSummary(syncResult) });
+    ragSync.syncAfterCreate('project').catch(e =>
+      console.error('[RAG Sync] Background sync failed after create:', e.message)
+    );
   } catch (error) {
     console.error('❌ ERROR CREATING PROJECT:', error.message);
     if (error.name === 'ValidationError') {
@@ -159,11 +160,12 @@ router.put('/:id', authMiddleware, async (req, res) => {
     project.updatedAt = Date.now();
     await project.save();
 
-    const syncResult = await ragSync.syncAfterUpdate('project').catch(e => ({
-      success: false, error: e.message
-    }));
+    // Respond immediately — RAG sync runs in the background (non-blocking)
+    res.json({ ...project.toObject(), ragSync: { queued: true } });
 
-    res.json({ ...project.toObject(), ragSync: _syncSummary(syncResult) });
+    ragSync.syncAfterUpdate('project').catch(e =>
+      console.error('[RAG Sync] Background sync failed after update:', e.message)
+    );
   } catch (error) {
     console.error('Error updating project:', error);
     res.status(500).json({ message: 'Error updating project' });
@@ -182,11 +184,12 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
 
-    const syncResult = await ragSync.syncAfterDelete('project').catch(e => ({
-      success: false, error: e.message
-    }));
+    // Respond immediately — RAG sync runs in the background (non-blocking)
+    res.json({ message: 'Project deleted successfully', ragSync: { queued: true } });
 
-    res.json({ message: 'Project deleted successfully', ragSync: _syncSummary(syncResult) });
+    ragSync.syncAfterDelete('project').catch(e =>
+      console.error('[RAG Sync] Background sync failed after delete:', e.message)
+    );
   } catch (error) {
     console.error('Error deleting project:', error);
     res.status(500).json({ message: 'Error deleting project' });

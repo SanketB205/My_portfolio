@@ -60,11 +60,10 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await experience.save();
 
-    const syncResult = await ragSync.syncAfterCreate('experience').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.status(201).json({ ...experience.toObject(), ragSync: _syncSummary(syncResult) });
+    res.status(201).json({ ...experience.toObject(), ragSync: { queued: true } });
+    ragSync.syncAfterCreate('experience').catch(e =>
+      console.error('[RAG Sync] Background sync failed after experience create:', e.message)
+    );
   } catch (error) {
     console.error('Error creating experience:', error);
     res.status(500).json({ message: 'Error creating experience' });
@@ -98,11 +97,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     await experience.save();
 
-    const syncResult = await ragSync.syncAfterUpdate('experience').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.json({ ...experience.toObject(), ragSync: _syncSummary(syncResult) });
+    res.json({ ...experience.toObject(), ragSync: { queued: true } });
+    ragSync.syncAfterUpdate('experience').catch(e =>
+      console.error('[RAG Sync] Background sync failed after experience update:', e.message)
+    );
   } catch (error) {
     console.error('Error updating experience:', error);
     res.status(500).json({ message: 'Error updating experience' });
@@ -115,11 +113,10 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const experience = await Experience.findByIdAndDelete(req.params.id);
     if (!experience) return res.status(404).json({ message: 'Experience not found' });
 
-    const syncResult = await ragSync.syncAfterDelete('experience').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.json({ message: 'Experience deleted successfully', ragSync: _syncSummary(syncResult) });
+    res.json({ message: 'Experience deleted successfully', ragSync: { queued: true } });
+    ragSync.syncAfterDelete('experience').catch(e =>
+      console.error('[RAG Sync] Background sync failed after experience delete:', e.message)
+    );
   } catch (error) {
     console.error('Error deleting experience:', error);
     res.status(500).json({ message: 'Error deleting experience' });

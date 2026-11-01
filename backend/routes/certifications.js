@@ -43,11 +43,10 @@ router.post('/', authMiddleware, async (req, res) => {
     const cert  = new Certification({ title, issuer, year, order: order || 0 });
     const saved = await cert.save();
 
-    const syncResult = await ragSync.syncAfterCreate('certification').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.status(201).json({ ...saved.toObject(), ragSync: _syncSummary(syncResult) });
+    res.status(201).json({ ...saved.toObject(), ragSync: { queued: true } });
+    ragSync.syncAfterCreate('certification').catch(e =>
+      console.error('[RAG Sync] Background sync failed after certification create:', e.message)
+    );
   } catch (err) {
     console.error('Error creating certification:', err);
     res.status(500).json({ message: 'Error creating certification', error: err.message });
@@ -69,11 +68,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     const updated = await cert.save();
 
-    const syncResult = await ragSync.syncAfterUpdate('certification').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.json({ ...updated.toObject(), ragSync: _syncSummary(syncResult) });
+    res.json({ ...updated.toObject(), ragSync: { queued: true } });
+    ragSync.syncAfterUpdate('certification').catch(e =>
+      console.error('[RAG Sync] Background sync failed after certification update:', e.message)
+    );
   } catch (err) {
     console.error('Error updating certification:', err);
     res.status(500).json({ message: 'Error updating certification', error: err.message });
@@ -86,11 +84,10 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const cert = await Certification.findByIdAndDelete(req.params.id);
     if (!cert) return res.status(404).json({ message: 'Certification not found' });
 
-    const syncResult = await ragSync.syncAfterDelete('certification').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.json({ message: 'Certification deleted successfully', ragSync: _syncSummary(syncResult) });
+    res.json({ message: 'Certification deleted successfully', ragSync: { queued: true } });
+    ragSync.syncAfterDelete('certification').catch(e =>
+      console.error('[RAG Sync] Background sync failed after certification delete:', e.message)
+    );
   } catch (err) {
     console.error('Error deleting certification:', err);
     res.status(500).json({ message: 'Error deleting certification' });

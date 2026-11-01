@@ -50,11 +50,10 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await skill.save();
 
-    const syncResult = await ragSync.syncAfterCreate('skill').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.status(201).json({ ...skill.toObject(), ragSync: _syncSummary(syncResult) });
+    res.status(201).json({ ...skill.toObject(), ragSync: { queued: true } });
+    ragSync.syncAfterCreate('skill').catch(e =>
+      console.error('[RAG Sync] Background sync failed after skill create:', e.message)
+    );
   } catch (error) {
     console.error('Error creating skill:', error);
     res.status(500).json({ message: 'Error creating skill' });
@@ -77,11 +76,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     await skill.save();
 
-    const syncResult = await ragSync.syncAfterUpdate('skill').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.json({ ...skill.toObject(), ragSync: _syncSummary(syncResult) });
+    res.json({ ...skill.toObject(), ragSync: { queued: true } });
+    ragSync.syncAfterUpdate('skill').catch(e =>
+      console.error('[RAG Sync] Background sync failed after skill update:', e.message)
+    );
   } catch (error) {
     console.error('Error updating skill:', error);
     res.status(500).json({ message: 'Error updating skill' });
@@ -94,11 +92,10 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const skill = await Skill.findByIdAndDelete(req.params.id);
     if (!skill) return res.status(404).json({ message: 'Skill not found' });
 
-    const syncResult = await ragSync.syncAfterDelete('skill').catch(e => ({
-      success: false, error: e.message
-    }));
-
-    res.json({ message: 'Skill deleted successfully', ragSync: _syncSummary(syncResult) });
+    res.json({ message: 'Skill deleted successfully', ragSync: { queued: true } });
+    ragSync.syncAfterDelete('skill').catch(e =>
+      console.error('[RAG Sync] Background sync failed after skill delete:', e.message)
+    );
   } catch (error) {
     console.error('Error deleting skill:', error);
     res.status(500).json({ message: 'Error deleting skill' });
