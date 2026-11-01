@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
-import profileImg from '../assets/ChatGPT Image Sep 11, 2026, 08_21_05 PM.png'
+// Bundled fallback — only used when the backend has NO uploaded profile image
+import fallbackProfileImg from '../assets/ChatGPT Image Sep 11, 2026, 08_21_05 PM.png'
 
 export default function Hero() {
   const [activeResume, setActiveResume] = useState(null)
-  const [profileSrc, setProfileSrc] = useState(profileImg)
+  const [profileSrc, setProfileSrc] = useState(null)   // null = loading; avoids hardcoded flash
+  const [profileLoading, setProfileLoading] = useState(true)
   const [projectCount, setProjectCount] = useState(null)
+  const [skills, setSkills] = useState([])
+  const [experiences, setExperiences] = useState([])
 
   useEffect(() => {
     // Fetch active resume
@@ -13,20 +17,32 @@ export default function Hero() {
       .then(res => setActiveResume(res.data))
       .catch(() => {})
 
-    // Fetch active profile image — fall back to bundled asset if none uploaded
+    // Fetch active profile image from DB — only fall back to bundled asset if none uploaded
     axios.get('/api/profile-image/active')
       .then(res => {
         const img = res.data
-        setProfileSrc(`http://localhost:5000/uploads/profile/${img.filename}`)
+        setProfileSrc(`/uploads/profile/${img.filename}`)
       })
       .catch(() => {
-        setProfileSrc(profileImg)
+        // Backend unreachable or no image uploaded — use bundled asset as last resort
+        setProfileSrc(fallbackProfileImg)
       })
+      .finally(() => setProfileLoading(false))
 
     // Fetch real project count
     axios.get('/api/projects')
       .then(res => setProjectCount(res.data.length))
       .catch(() => setProjectCount(null))
+
+    // Fetch skills for pills and count
+    axios.get('/api/skills')
+      .then(res => setSkills(res.data))
+      .catch(() => setSkills([]))
+
+    // Fetch experience for internship count
+    axios.get('/api/experience')
+      .then(res => setExperiences(res.data))
+      .catch(() => setExperiences([]))
   }, [])
 
   // Format count: show exact number, append "+" when ≥ 1
@@ -36,20 +52,16 @@ export default function Hero() {
       ? '0'
       : `${projectCount}+`
 
+  const skillCountLabel = skills.length > 0 ? `${skills.length}+` : '—'
+  const internshipLabel = experiences.length > 0 ? experiences.length.toString() : '—'
+
   const stats = [
-    { value: projectLabel, label: 'Projects' },
-    { value: '6+', label: 'Technologies' },
-    { value: '2', label: 'Internships' },
+    { value: projectLabel,    label: 'Projects' },
+    { value: skillCountLabel, label: 'Technologies' },
+    { value: internshipLabel, label: 'Internships' },
   ]
 
-  const skills = [
-    'React',
-    'Node.js',
-    'Express',
-    'MongoDB',
-    'JavaScript',
-    'Tailwind',
-  ]
+  const skillPills = skills.slice(0, 6).map(s => s.name)
 
   return (
     <section id="home" className="w-full py-8 sm:py-12 lg:py-16 scroll-mt-24">
@@ -110,7 +122,7 @@ export default function Hero() {
 
             {/* Skill Pills */}
             <div className="flex flex-wrap items-center gap-2.5 mb-10 sm:mb-14">
-              {skills.map((skill) => (
+              {skillPills.map((skill) => (
                 <span
                   key={skill}
                   className="bg-white border border-gray-200 text-gray-700 text-xs sm:text-sm font-medium rounded-full px-4 py-2 shadow-xs transition-colors hover:border-gray-300"
@@ -149,14 +161,19 @@ export default function Hero() {
                 </span>
               </div> */}
 
-              {/* Profile Image with rounded-2xl */}
+              {/* Profile Image — skeleton while loading, DB image once resolved */}
               <div className="overflow-hidden rounded-2xl w-full">
-                <img
-                  src={profileSrc}
-                  alt="Sanket Profile"
-                  className="w-full aspect-[4/5] object-cover block"
-                  onError={() => setProfileSrc(profileImg)}
-                />
+                {profileSrc === null ? (
+                  /* Skeleton placeholder — same aspect ratio as the image */
+                  <div className="w-full aspect-[4/5] bg-gradient-to-br from-gray-100 to-gray-200 animate-pulse rounded-2xl" />
+                ) : (
+                  <img
+                    src={profileSrc}
+                    alt="Sanket Profile"
+                    className="w-full aspect-[4/5] object-cover block"
+                    onError={() => setProfileSrc(fallbackProfileImg)}
+                  />
+                )}
               </div>
 
               {/* Floating Badge Bottom-Right */}
