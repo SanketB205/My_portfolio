@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env*.local
+!.env.example
+
+# Builds
+dist/
+
+# Uploads — ignore all private files but keep directory structure
+uploads/**
+!uploads/**/
+!uploads/**/.gitkeep
+
+# Root-level private files
+*.pdf
+*.PDF
+
+# HuggingFace model cache
+.hf_cache/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
