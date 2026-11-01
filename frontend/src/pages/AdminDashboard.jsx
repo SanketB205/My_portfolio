@@ -7,6 +7,8 @@ import { Plus, Pencil, Trash2, X, Upload, ImageOff, ChevronUp, ChevronDown } fro
 import ResumeManager from '../components/ResumeManager'
 import ProfileImageManager from '../components/ProfileImageManager'
 import CertificationManager from '../components/CertificationManager'
+import SkillManager from '../components/SkillManager'
+import ExperienceManager from '../components/ExperienceManager'
 import {
   saveProjectThumbnail,
   getProjectThumbnailUrl,
@@ -508,8 +510,18 @@ export default function AdminDashboard() {
           )}
         </div>
 
+        {/* Skills / Technologies */}
+        <div className="mt-8">
+          <SkillManager />
+        </div>
+
+        {/* Experience / Internships */}
+        <div className="mt-6">
+          <ExperienceManager />
+        </div>
+
         {/* Resume & Profile Image */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
           <ResumeManager />
           <ProfileImageManager />
         </div>
