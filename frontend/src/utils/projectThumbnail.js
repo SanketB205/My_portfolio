@@ -24,10 +24,12 @@ export async function saveProjectThumbnail(projectId, file) {
   const form = new FormData();
   form.append('thumbnail', file);
 
+  // Do NOT set Content-Type manually — axios must auto-generate the
+  // multipart/form-data header with the correct boundary, otherwise
+  // Multer cannot parse the request body and rejects with a 400/500.
   const { data } = await axiosInstance.post(
     `/projects/${projectId}/thumbnail`,
-    form,
-    { headers: { 'Content-Type': 'multipart/form-data' } }
+    form
   );
 
   return data.thumbnail; // "/uploads/thumbnails/thumb-xxx.jpg"
@@ -44,8 +46,10 @@ export function getProjectThumbnailUrl(project) {
   if (!project?.thumbnail) return null;
   // Already absolute (Cloudinary or CDN) — return as-is
   if (project.thumbnail.startsWith('http')) return project.thumbnail;
-  // Local path — browser resolves via Vite proxy in dev, or real domain in prod
-  return project.thumbnail;
+  // Relative path from backend — prefix with backend origin in production.
+  // In local dev VITE_API_URL is undefined so the Vite proxy handles it.
+  const backendBase = import.meta.env.VITE_API_URL ?? '';
+  return `${backendBase}${project.thumbnail}`;
 }
 
 /**

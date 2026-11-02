@@ -85,37 +85,41 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Startup sequence ─────────────────────────────────────────────
+// IMPORTANT: HTTP server starts immediately after MongoDB so Render's
+// health-check probe succeeds during the slow embedding model download.
+// The embedding / vector-store / RAG services initialise in the background.
 async function startServer() {
   try {
-    // 1. MongoDB
+    // 1. MongoDB — must succeed before we accept requests
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('✅ MongoDB connected —', mongoose.connection.name);
 
-    // 2. Local embedding model (downloads once, then cached)
+    // 2. Start HTTP server right away so Render health-checks pass
+    //    and all non-chatbot routes (projects, skills, auth …) are live.
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+
+    // 3. Embedding model — slow on first run (~25 MB download); runs in background
     const embOk = await embeddingService.initialize();
     if (!embOk) {
       console.warn('⚠  Embedding service failed — chatbot will run without RAG');
     }
 
-    // 3. Vectra vector store (file-based, no Docker)
+    // 4. Vectra vector store (file-based, no Docker)
     const vsOk = await vectorStore.initialize();
     if (!vsOk) {
       console.warn('⚠  Vector store failed — chatbot will run without RAG');
     }
 
-    // 4. RAG service (depends on 2 + 3)
+    // 5. RAG service (depends on 3 + 4)
     if (embOk && vsOk) {
       const ragOk = await portfolioRagService.initialize();
       if (!ragOk) {
         console.warn('⚠  RAG service failed — chatbot will run without portfolio context');
       }
     }
-
-    // 5. Start HTTP server
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
 
   } catch (err) {
     console.error('❌ Server startup failed:', err.message);
