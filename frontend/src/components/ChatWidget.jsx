@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react'
+﻿import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import axios from 'axios'
+import axiosInstance from '../utils/axiosInstance'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MessageCircle, X, Send, Bot } from 'lucide-react'
 
@@ -127,7 +127,7 @@ export default function ChatWidget() {
       }))
 
       // POST to /api/chatbot via axios
-      const response = await axios.post('/api/chatbot', {
+      const response = await axiosInstance.post('/chatbot', {
         message: trimmedMessage,
         conversationHistory,
       })
@@ -325,3 +325,4 @@ export default function ChatWidget() {
     document.body
   )
 }
+

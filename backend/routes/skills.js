@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
 // POST — create skill
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { name, category, level, icon, order } = req.body;
+    const { name, category, icon, order } = req.body;
 
     if (!name || !category) {
       return res.status(400).json({ message: 'Name and category are required' });
@@ -43,7 +43,6 @@ router.post('/', authMiddleware, async (req, res) => {
     const skill = new Skill({
       name,
       category,
-      level: level || 'Intermediate',
       icon,
       order: order || 0
     });
@@ -63,14 +62,13 @@ router.post('/', authMiddleware, async (req, res) => {
 // PUT — update skill
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const { name, category, level, icon, order } = req.body;
+    const { name, category, icon, order } = req.body;
 
     const skill = await Skill.findById(req.params.id);
     if (!skill) return res.status(404).json({ message: 'Skill not found' });
 
     if (name     !== undefined) skill.name     = name;
     if (category !== undefined) skill.category = category;
-    if (level    !== undefined) skill.level    = level;
     if (icon     !== undefined) skill.icon     = icon;
     if (order    !== undefined) skill.order    = order;
 

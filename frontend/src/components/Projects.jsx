@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import axios from 'axios'
+﻿import React, { useState, useEffect } from 'react'
+import axiosInstance from '../utils/axiosInstance'
 import { getProjectThumbnailUrl } from '../utils/projectThumbnail'
 
 // Character threshold beyond which "Read more" appears
@@ -165,7 +165,7 @@ export default function Projects() {
 
   const fetchProjects = async () => {
     try {
-      const response = await axios.get('/api/projects')
+      const response = await axiosInstance.get('/projects')
       const data = response.data || []
       // Ensure featured projects are ordered first, then respect admin sequence (order), then newest
       const sorted = [...data].sort((a, b) => {
@@ -228,3 +228,4 @@ export default function Projects() {
     </section>
   )
 }
+

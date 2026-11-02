@@ -1,8 +1,14 @@
 import axios from 'axios'
 
+// In production, VITE_API_URL points to the Render backend.
+// In local dev it is undefined, so we fall back to '/api' which Vite proxies to localhost:5000.
+const BASE_URL = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api'
+
 // Create axios instance with default config
 const axiosInstance = axios.create({
-  baseURL: '/api',
+  baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json'
   }

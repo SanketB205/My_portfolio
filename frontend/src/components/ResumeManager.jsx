@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import axiosInstance from '../utils/axiosInstance'
-import axios from 'axios'
 import { Upload, FileText, Trash2, Download, Check } from 'lucide-react'
 
 export default function ResumeManager() {
@@ -273,3 +272,5 @@ export default function ResumeManager() {
     </div>
   )
 }
+
+

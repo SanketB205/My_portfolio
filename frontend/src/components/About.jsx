@@ -1,29 +1,21 @@
-import React, { useState, useEffect } from 'react'
-import axios from 'axios'
-
-// Fallback shown while loading or if API is unreachable
-const FALLBACK_CERTS = [
-  { _id: 'f1', title: 'Junior Software Developer',            issuer: 'REGEX Technologies', year: '2023' },
-  { _id: 'f2', title: 'Oracle Cloud AI Foundations Associate', issuer: 'Oracle',             year: '2025' },
-  { _id: 'f3', title: 'Introduction to Machine Learning',      issuer: 'NPTEL',              year: '2026' },
-]
+﻿import React, { useState, useEffect } from 'react'
+import axiosInstance from '../utils/axiosInstance'
 
 export default function About() {
   const [projectCount,   setProjectCount]   = useState(null)
-  const [certifications, setCertifications] = useState(FALLBACK_CERTS)
+  const [certifications, setCertifications] = useState([])
   const [certsLoading,   setCertsLoading]   = useState(true)
 
   useEffect(() => {
-    axios.get('/api/projects')
+    axiosInstance.get('/projects')
       .then(res => setProjectCount(res.data.length))
       .catch(() => setProjectCount(null))
 
-    axios.get('/api/certifications')
+    axiosInstance.get('/certifications')
       .then(res => {
-        // Only replace fallback if API actually returns data
-        if (res.data.length > 0) setCertifications(res.data)
+        setCertifications(res.data)
       })
-      .catch(() => { /* keep fallback */ })
+      .catch(() => { /* leave as empty array */ })
       .finally(() => setCertsLoading(false))
   }, [])
 
@@ -148,11 +140,11 @@ export default function About() {
 
             {/* Bio Paragraph */}
             <p className="text-gray-500 text-base sm:text-lg max-w-[520px] leading-relaxed mb-8 sm:mb-10 font-normal">
-              Hi, I’m Sanket Bhujbal, a Computer Engineering student pursuing my Bachelor of Engineering at VPKBIET, Baramati, with a CGPA of 8.52/10. I’m a full-stack developer passionate about building modern, responsive, and scalable web applications using the MERN stack.
+              Hi, I'm Sanket Bhujbal, a Computer Engineering student pursuing my Bachelor of Engineering at VPKBIET, Baramati, with a CGPA of 8.52/10. I'm a full-stack developer passionate about building modern, responsive, and scalable web applications using the MERN stack.
 
-              I’ve gained practical industry experience through internships at Regex Technologies and CloudRegex InfoTech, working on web development, RESTful APIs, databases, authentication, debugging, and real-world software projects.
+              I've gained practical industry experience through internships at Regex Technologies and CloudRegex InfoTech, working on web development, RESTful APIs, databases, authentication, debugging, and real-world software projects.
 
-              I enjoy transforming ideas into reliable digital products and solving problems through technology. From EV charging and slot booking systems to blog platforms and service-booking applications, I’ve worked across both frontend and backend development. I’m also continuously improving my skills in Java, DSA, AI/ML, software engineering, and problem solving.
+              I enjoy transforming ideas into reliable digital products and solving problems through technology. From EV charging and slot booking systems to blog platforms and service-booking applications, I've worked across both frontend and backend development. I'm also continuously improving my skills in Java, DSA, AI/ML, software engineering, and problem solving.
             </p>
 
             {/* Education Card */}
@@ -168,7 +160,7 @@ export default function About() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth="1.8"
-                    d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5"
+                    d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0112 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5"
                   />
                 </svg>
                 Education
@@ -257,25 +249,27 @@ export default function About() {
                         <div className="h-5 w-10 bg-gray-200 rounded-full" />
                       </div>
                     ))
-                  : certifications.map((cert, idx) => (
-                      <div
-                        key={cert._id}
-                        className={`flex items-start gap-3 ${idx === 0 ? 'pb-4' : idx === certifications.length - 1 ? 'pt-4' : 'py-4'}`}
-                      >
-                        <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center">
-                          <span className="text-[10px] text-black font-bold">✦</span>
-                        </span>
-                        <div>
-                          <p className="text-sm font-bold text-black leading-snug">
-                            {cert.title}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-0.5">{cert.issuer}</p>
+                  : certifications.length === 0
+                    ? <p className="text-gray-400 text-sm text-center py-4">No certifications added yet.</p>
+                    : certifications.map((cert, idx) => (
+                        <div
+                          key={cert._id}
+                          className={`flex items-start gap-3 ${idx === 0 ? 'pb-4' : idx === certifications.length - 1 ? 'pt-4' : 'py-4'}`}
+                        >
+                          <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center">
+                            <span className="text-[10px] text-black font-bold">✦</span>
+                          </span>
+                          <div>
+                            <p className="text-sm font-bold text-black leading-snug">
+                              {cert.title}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5">{cert.issuer}</p>
+                          </div>
+                          <span className="ml-auto flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 self-start">
+                            {cert.year}
+                          </span>
                         </div>
-                        <span className="ml-auto flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 self-start">
-                          {cert.year}
-                        </span>
-                      </div>
-                    ))
+                      ))
                 }
               </div>
             </div>
@@ -286,3 +280,4 @@ export default function About() {
     </section>
   )
 }
+

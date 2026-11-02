@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import axios from 'axios'
+﻿import React, { useState, useEffect } from 'react'
+import axiosInstance from '../utils/axiosInstance'
 
 export default function Contact() {
   const [formData, setFormData] = useState({
@@ -43,7 +43,7 @@ export default function Contact() {
     setStatus({ loading: true, success: false, error: false, message: 'Sending...' })
 
     try {
-      await axios.post('/api/contact', formData)
+      await axiosInstance.post('/contact', formData)
       setStatus({
         loading: false,
         success: true,
@@ -313,3 +313,4 @@ export default function Contact() {
     </section>
   )
 }
+

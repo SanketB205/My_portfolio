@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import axiosInstance from '../utils/axiosInstance'
-import axios from 'axios'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 
 const emptyForm = {
@@ -56,7 +55,7 @@ export default function ExperienceManager() {
   const fetchExperiences = async () => {
     try {
       setLoading(true)
-      const { data } = await axios.get('/api/experience')
+      const { data } = await axiosInstance.get('/experience')
       setExperiences(data)
     } catch (err) {
       console.error('Error fetching experiences:', err)
@@ -422,3 +421,5 @@ export default function ExperienceManager() {
     </div>
   )
 }
+
+

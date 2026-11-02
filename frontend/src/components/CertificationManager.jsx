@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import axiosInstance from '../utils/axiosInstance'
-import axios from 'axios'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 
 const emptyForm = { title: '', issuer: '', year: '' }
@@ -20,7 +19,7 @@ export default function CertificationManager() {
   const fetchCerts = async () => {
     try {
       setLoading(true)
-      const { data } = await axios.get('/api/certifications')
+      const { data } = await axiosInstance.get('/certifications')
       setCerts(data)
     } catch (err) {
       console.error('Error fetching certifications:', err)
@@ -300,3 +299,5 @@ export default function CertificationManager() {
     </div>
   )
 }
+
+

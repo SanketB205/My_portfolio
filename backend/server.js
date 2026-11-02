@@ -34,7 +34,26 @@ if (process.env.TRUST_PROXY) {
 }
 
 // ─── Middleware ───────────────────────────────────────────────────
-app.use(cors());
+// Allowed origins: Vercel frontend (set CORS_ORIGIN on Render), plus localhost for dev.
+// CORS_ORIGIN can be a comma-separated list of origins.
+const allowedOrigins = [
+  'http://localhost:5173',   // Vite dev server
+  'http://localhost:3000',
+  ...(process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : []),
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow server-to-server (no origin) and any vercel.app subdomain
+    if (!origin || origin.endsWith('.vercel.app') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use('/uploads', express.static('uploads'));

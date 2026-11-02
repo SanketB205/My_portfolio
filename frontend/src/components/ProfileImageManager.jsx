@@ -103,9 +103,13 @@ export default function ProfileImageManager() {
       hour: '2-digit', minute: '2-digit'
     })
 
-  // The URL the browser can reach for a stored image
-  const imageUrl = (img) =>
-    `http://localhost:5000/uploads/profile/${img.filename}`
+  // The URL the browser can reach for a stored image.
+  // In production, VITE_API_URL is the Render backend origin.
+  // In local dev it is undefined and Vite proxies /uploads → localhost:5000.
+  const imageUrl = (img) => {
+    const base = import.meta.env.VITE_API_URL ?? ''
+    return `${base}/uploads/profile/${img.filename}`
+  }
 
   return (
     <div className="bg-white rounded-3xl p-8 border border-gray-200/80 shadow-sm h-full flex flex-col">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import axios from 'axios'
+import axiosInstance from '../utils/axiosInstance'
 // Bundled fallback — only used when the backend has NO uploaded profile image
 import fallbackProfileImg from '../assets/ChatGPT Image Sep 11, 2026, 08_21_05 PM.png'
 
@@ -12,16 +12,19 @@ export default function Hero() {
   const [experiences, setExperiences] = useState([])
 
   useEffect(() => {
+    // Prefix for /uploads paths — empty string in dev (Vite proxy), Render origin in prod
+    const uploadsBase = import.meta.env.VITE_API_URL ?? ''
+
     // Fetch active resume
-    axios.get('/api/resume/active')
+    axiosInstance.get('/resume/active')
       .then(res => setActiveResume(res.data))
       .catch(() => {})
 
     // Fetch active profile image from DB — only fall back to bundled asset if none uploaded
-    axios.get('/api/profile-image/active')
+    axiosInstance.get('/profile-image/active')
       .then(res => {
         const img = res.data
-        setProfileSrc(`/uploads/profile/${img.filename}`)
+        setProfileSrc(`${uploadsBase}/uploads/profile/${img.filename}`)
       })
       .catch(() => {
         // Backend unreachable or no image uploaded — use bundled asset as last resort
@@ -30,17 +33,17 @@ export default function Hero() {
       .finally(() => setProfileLoading(false))
 
     // Fetch real project count
-    axios.get('/api/projects')
+    axiosInstance.get('/projects')
       .then(res => setProjectCount(res.data.length))
       .catch(() => setProjectCount(null))
 
     // Fetch skills for pills and count
-    axios.get('/api/skills')
+    axiosInstance.get('/skills')
       .then(res => setSkills(res.data))
       .catch(() => setSkills([]))
 
     // Fetch experience for internship count
-    axios.get('/api/experience')
+    axiosInstance.get('/experience')
       .then(res => setExperiences(res.data))
       .catch(() => setExperiences([]))
   }, [])

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
 import axiosInstance from '../utils/axiosInstance'
 import { Plus, Pencil, Trash2, X, Upload, ImageOff, ChevronUp, ChevronDown } from 'lucide-react'
 import ResumeManager from '../components/ResumeManager'
@@ -157,7 +156,7 @@ export default function AdminDashboard() {
   const fetchProjects = async () => {
     try {
       setLoading(true)
-      const response = await axios.get('/api/projects')
+      const response = await axiosInstance.get('/projects')
       setProjects(response.data)
     } catch (error) {
       console.error('Error fetching projects:', error)
@@ -681,3 +680,4 @@ export default function AdminDashboard() {
     </div>
   )
 }
+

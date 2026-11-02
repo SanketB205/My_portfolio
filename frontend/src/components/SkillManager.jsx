@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import axiosInstance from '../utils/axiosInstance'
-import axios from 'axios'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 
-const CATEGORIES = ['Frontend', 'Backend', 'Database', 'Tools', 'Other']
-const LEVELS     = ['Beginner', 'Intermediate', 'Advanced', 'Expert']
-const emptyForm  = { name: '', category: 'Frontend', level: 'Intermediate' }
+const CATEGORIES = ['Frontend', 'Backend', 'Database', 'Tools', 'Programming Languages', 'Core Concepts', 'Other']
+const emptyForm  = { name: '', category: 'Frontend' }
 
 // ─── Input class helper ────────────────────────────────────────────
 const inputCls = (err) =>
@@ -26,7 +24,7 @@ export default function SkillManager() {
   const fetchSkills = async () => {
     try {
       setLoading(true)
-      const { data } = await axios.get('/api/skills')
+      const { data } = await axiosInstance.get('/skills')
       setSkills(data)
     } catch (err) {
       console.error('Error fetching skills:', err)
@@ -46,7 +44,7 @@ export default function SkillManager() {
 
   const openEdit = (skill) => {
     setEditing(skill)
-    setFormData({ name: skill.name, category: skill.category, level: skill.level || 'Intermediate' })
+    setFormData({ name: skill.name, category: skill.category })
     setFormErrors({})
     setSubmitError('')
     setFormOpen(true)
@@ -158,7 +156,7 @@ export default function SkillManager() {
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <span className="flex-shrink-0 w-2 h-2 rounded-full bg-black" />
                       <span className="text-sm font-bold text-black truncate">{skill.name}</span>
-                      <span className="text-xs text-gray-400 font-medium hidden sm:block">{skill.level}</span>
+
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
@@ -238,16 +236,7 @@ export default function SkillManager() {
                 {formErrors.category && <p className="text-xs text-red-600 mt-1">{formErrors.category}</p>}
               </div>
 
-              {/* Level */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Proficiency Level</label>
-                <select
-                  name="level" value={formData.level} onChange={handleChange}
-                  className={inputCls(false)}
-                >
-                  {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-              </div>
+
 
               {/* Submit error */}
               {submitError && (
@@ -278,3 +267,5 @@ export default function SkillManager() {
     </div>
   )
 }
+
+
