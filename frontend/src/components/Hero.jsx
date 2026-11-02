@@ -5,8 +5,8 @@ import fallbackProfileImg from '../assets/ChatGPT Image Sep 11, 2026, 08_21_05 P
 
 export default function Hero() {
   const [activeResume, setActiveResume] = useState(null)
-  const [profileSrc, setProfileSrc] = useState(null)   // null = loading; avoids hardcoded flash
-  const [profileLoading, setProfileLoading] = useState(true)
+  const [profileSrc, setProfileSrc] = useState(null)   // null = API still fetching
+  const [imageLoaded, setImageLoaded] = useState(false) // true once <img> fires onLoad
   const [projectCount, setProjectCount] = useState(null)
   const [skills, setSkills] = useState([])
   const [experiences, setExperiences] = useState([])
@@ -30,7 +30,6 @@ export default function Hero() {
         // Backend unreachable or no image uploaded — use bundled asset as last resort
         setProfileSrc(fallbackProfileImg)
       })
-      .finally(() => setProfileLoading(false))
 
     // Fetch real project count
     axiosInstance.get('/projects')
@@ -164,17 +163,34 @@ export default function Hero() {
                 </span>
               </div> */}
 
-              {/* Profile Image — skeleton while loading, DB image once resolved */}
-              <div className="overflow-hidden rounded-2xl w-full">
-                {profileSrc === null ? (
-                  /* Skeleton placeholder — same aspect ratio as the image */
-                  <div className="w-full aspect-[4/5] bg-gradient-to-br from-gray-100 to-gray-200 animate-pulse rounded-2xl" />
-                ) : (
+              {/* Profile Image — shimmer skeleton until fully loaded */}
+              <div className="overflow-hidden rounded-2xl w-full relative">
+                {/* Base shimmer layer — always present, gives the container its 4/5 height.
+                    Once the image finishes loading it fades in over the top and hides this. */}
+                <div
+                  className="w-full aspect-[4/5] skeleton-shimmer"
+                  aria-hidden="true"
+                />
+
+                {/* Real image overlaid on top. Rendered immediately so the browser
+                    starts downloading; invisible (opacity-0) until onLoad fires. */}
+                {profileSrc && (
                   <img
                     src={profileSrc}
                     alt="Sanket Profile"
-                    className="w-full aspect-[4/5] object-cover block"
-                    onError={() => setProfileSrc(fallbackProfileImg)}
+                    onLoad={() => setImageLoaded(true)}
+                    onError={() => {
+                      // If the uploaded image fails to load, swap to the bundled fallback
+                      if (profileSrc !== fallbackProfileImg) {
+                        setImageLoaded(false)
+                        setProfileSrc(fallbackProfileImg)
+                      } else {
+                        // Even the fallback failed — reveal whatever we have
+                        setImageLoaded(true)
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full object-cover block transition-opacity duration-500"
+                    style={{ opacity: imageLoaded ? 1 : 0 }}
                   />
                 )}
               </div>

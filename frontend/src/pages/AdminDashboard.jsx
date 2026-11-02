@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import axiosInstance from '../utils/axiosInstance'
-import { Plus, Pencil, Trash2, X, Upload, ImageOff, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Upload, ImageOff, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react'
 import ResumeManager from '../components/ResumeManager'
 import ProfileImageManager from '../components/ProfileImageManager'
 import CertificationManager from '../components/CertificationManager'
@@ -145,11 +145,15 @@ export default function AdminDashboard() {
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
   // Thumbnail state
-  const [thumbStagedFile,    setThumbStagedFile]    = useState(null)   // File | null
-  const [thumbStagedPreview, setThumbStagedPreview] = useState(null)   // dataURL | null
-  const [thumbExistingUrl,   setThumbExistingUrl]   = useState(null)   // saved URL | null
-  const [thumbRemoved,       setThumbRemoved]       = useState(false)  // flagged for deletion
+  const [thumbStagedFile,    setThumbStagedFile]    = useState(null)
+  const [thumbStagedPreview, setThumbStagedPreview] = useState(null)
+  const [thumbExistingUrl,   setThumbExistingUrl]   = useState(null)
+  const [thumbRemoved,       setThumbRemoved]       = useState(false)
   const [thumbError,         setThumbError]         = useState('')
+
+  // RAG reindex state
+  const [ragIndexing, setRagIndexing] = useState(false)
+  const [ragStatus,   setRagStatus]   = useState(null) // null | 'success' | 'error'
 
   useEffect(() => { fetchProjects() }, [])
 
@@ -166,6 +170,20 @@ export default function AdminDashboard() {
   }
 
   const handleLogout = () => { logout(); navigate('/') }
+
+  const handleReindex = async () => {
+    setRagIndexing(true)
+    setRagStatus(null)
+    try {
+      const { data } = await axiosInstance.post('/vectordb/reindex')
+      setRagStatus({ ok: true, msg: `✅ Indexed ${data.stats?.indexed ?? '?'} documents` })
+    } catch (err) {
+      setRagStatus({ ok: false, msg: err.response?.data?.error || 'Reindex failed' })
+    } finally {
+      setRagIndexing(false)
+      setTimeout(() => setRagStatus(null), 5000)
+    }
+  }
 
   const resetThumbState = () => {
     setThumbStagedFile(null)
@@ -363,12 +381,31 @@ export default function AdminDashboard() {
         {/* Top Bar */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-extrabold text-black">Admin Dashboard</h1>
-          <button
-            onClick={handleLogout}
-            className="px-6 py-2.5 bg-white hover:bg-black hover:text-white border border-gray-200 text-black font-medium rounded-full text-sm transition-colors duration-200"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-3">
+            {/* RAG reindex button */}
+            <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={handleReindex}
+                disabled={ragIndexing}
+                title="Rebuild the AI chatbot's knowledge from MongoDB"
+                className="flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-black hover:text-white border border-gray-200 text-black font-medium rounded-full text-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw size={15} className={ragIndexing ? 'animate-spin' : ''} />
+                {ragIndexing ? 'Indexing…' : 'Reindex AI'}
+              </button>
+              {ragStatus && (
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  ragStatus.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                }`}>{ragStatus.msg}</span>
+              )}
+            </div>
+            <button
+              onClick={handleLogout}
+              className="px-6 py-2.5 bg-white hover:bg-black hover:text-white border border-gray-200 text-black font-medium rounded-full text-sm transition-colors duration-200"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Projects Card */}

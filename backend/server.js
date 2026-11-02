@@ -85,9 +85,8 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Startup sequence ─────────────────────────────────────────────
-// IMPORTANT: HTTP server starts immediately after MongoDB so Render's
-// health-check probe succeeds during the slow embedding model download.
-// The embedding / vector-store / RAG services initialise in the background.
+// HTTP server starts immediately after MongoDB so Render health-checks
+// pass during the slow embedding model download.
 async function startServer() {
   try {
     // 1. MongoDB — must succeed before we accept requests
@@ -101,7 +100,7 @@ async function startServer() {
       console.log(`🚀 Server running on port ${PORT}`);
     });
 
-    // 3. Embedding model — slow on first run (~25 MB download); runs in background
+    // 3. Embedding model — slow on first run (~25 MB download)
     const embOk = await embeddingService.initialize();
     if (!embOk) {
       console.warn('⚠  Embedding service failed — chatbot will run without RAG');
@@ -118,6 +117,29 @@ async function startServer() {
       const ragOk = await portfolioRagService.initialize();
       if (!ragOk) {
         console.warn('⚠  RAG service failed — chatbot will run without portfolio context');
+      }
+    }
+
+    // 6. Auto-seed vector store from MongoDB if empty.
+    //    Render’s filesystem is ephemeral: the index.json is wiped on every
+    //    redeploy/restart, so documentCount is always 0 on a fresh boot.
+    //    We re-build it automatically so the chatbot has portfolio context
+    //    without any manual intervention.
+    if (embOk && vsOk) {
+      try {
+        const { indexPortfolioDocuments } = require('./services/portfolioIndexer');
+        const storeStats = await vectorStore.getStats();
+
+        if (storeStats.documentCount === 0) {
+          console.log('🔄 Vector store is empty — auto-seeding from MongoDB...');
+          const result = await indexPortfolioDocuments();
+          console.log(`✅ Auto-seed complete — ${result.indexed}/${result.totalDocuments} documents indexed`);
+        } else {
+          console.log(`ℹ️  Vector store already has ${storeStats.documentCount} document(s) — skipping auto-seed`);
+        }
+      } catch (seedErr) {
+        // Non-fatal: chatbot works without RAG context
+        console.error('⚠  Auto-seed failed (chatbot will run without RAG context):', seedErr.message);
       }
     }
 
