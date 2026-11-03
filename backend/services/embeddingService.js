@@ -1,67 +1,85 @@
 'use strict';
 
 /**
- * Embedding Service
+ * Embedding Service — Memory-optimized for Render Free (512 MB RAM)
  *
- * Generates vector embeddings locally using @xenova/transformers (ONNX runtime).
- * No API key, no Docker, no paid service — runs fully on-device.
+ * Model:   Xenova/all-MiniLM-L6-v2  (384 dims, int8 quantized ONNX)
+ * Source:  https://huggingface.co/Xenova/all-MiniLM-L6-v2
  *
- * Model:   Xenova/all-MiniLM-L6-v2
- * Dims:    384
- * Type:    sentence-transformers  (cosine similarity, normalized)
- * Source:  https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
- *
- * The model is downloaded once from HuggingFace on first use and cached at
- *   %USERPROFILE%\.cache\huggingface\hub\   (Windows default)
- * or the path in env var HF_CACHE_DIR.
- *
- * Interface (unchanged from the OpenAI version):
- *   generateEmbedding(text)    → Promise<number[]>     single 384-dim vector
- *   generateEmbeddings(texts)  → Promise<number[][]>   batch, order preserved
- *   getModelInfo()             → { model, dimensions, provider, ... }
- *   isReady()                  → boolean
- *   initialize()               → Promise<boolean>
- *
- * NOTE: OpenAI is NOT used for embeddings at all in this file.
- * If the chatbot needs to embed user queries at runtime it will call
- * generateEmbedding() here — no OpenAI key needed.
+ * Memory strategy:
+ *   - quantized: true  → loads int8 ONNX weights (~22 MB, not ~90 MB fp32)
+ *   - batch size 1     → processes one text at a time, releases tensor before next
+ *   - global.gc()      → forces V8 GC between batches to reclaim inference buffers
+ *   - Single pipeline  → model loaded once per process, cached via _initPromise
+ *   - Single-threaded   → env.wasm.numThreads = 1 (no worker overhead on 1-CPU instances)
  */
+
+// ─── Memory diagnostics ───────────────────────────────────────────
+
+function logMemory(label) {
+  const m = process.memoryUsage();
+  console.log(
+    `[Memory] ${label}: ` +
+    `RSS=${(m.rss / 1048576).toFixed(1)}MB ` +
+    `Heap=${(m.heapUsed / 1048576).toFixed(1)}/${(m.heapTotal / 1048576).toFixed(1)}MB ` +
+    `Ext=${(m.external / 1048576).toFixed(1)}MB ` +
+    `ArrayBuf=${(m.arrayBuffers / 1048576).toFixed(1)}MB`
+  );
+}
 
 class EmbeddingService {
   constructor() {
-    this._extractor    = null;         // HuggingFace pipeline instance
+    this._extractor    = null;
+    this._initPromise  = null;       // cached — prevents double-loading
     this._model        = process.env.LOCAL_EMBEDDING_MODEL
                            ?? 'Xenova/all-MiniLM-L6-v2';
-    this._dimensions   = 384;          // fixed for all-MiniLM-L6-v2
+    this._dimensions   = 384;
     this.isInitialized = false;
   }
 
   // ─── Lifecycle ──────────────────────────────────────────────────
 
   /**
-   * Download (first run) or load (subsequent runs) the ONNX model.
-   * Call once at startup; await before making embed requests.
+   * Load the ONNX model.  Singleton: concurrent callers share one promise.
    */
   async initialize() {
+    if (this._initPromise) return this._initPromise;
+    this._initPromise = this._doInitialize();
+    return this._initPromise;
+  }
+
+  async _doInitialize() {
     try {
-      console.log(`✓ Loading local embedding model: ${this._model}`);
-      console.log('  (downloading ONNX weights on first run — ~25 MB)');
+      logMemory('Before model import');
+      console.log(`✓ Loading local embedding model: ${this._model} (quantized)`);
 
       const { pipeline, env } = await import('@xenova/transformers');
 
-      // Optional: redirect the model cache via env variable
+      // Redirect cache if configured
       if (process.env.HF_CACHE_DIR) {
         env.cacheDir = process.env.HF_CACHE_DIR;
       }
 
-      this._extractor    = await pipeline('feature-extraction', this._model);
-      this.isInitialized = true;
+      // Single-threaded WASM — no worker overhead on Render Free (1 CPU)
+      if (env.wasm) {
+        env.wasm.numThreads = 1;
+      }
 
-      console.log(`✓ Embedding model ready  (${this._dimensions} dims, local/offline)`);
+      logMemory('After import, before pipeline creation');
+
+      // Explicitly request quantized (int8) model — ~22 MB vs ~90 MB fp32
+      this._extractor = await pipeline('feature-extraction', this._model, {
+        quantized: true,
+      });
+
+      this.isInitialized = true;
+      logMemory('After model loaded');
+      console.log(`✓ Embedding model ready (${this._dimensions} dims, local/offline)`);
       return true;
     } catch (err) {
       console.error('Failed to load local embedding model:', err.message);
       this.isInitialized = false;
+      this._initPromise  = null;   // allow retry
       return false;
     }
   }
@@ -75,39 +93,44 @@ class EmbeddingService {
       model:      this._model,
       dimensions: this._dimensions,
       provider:   'local (Xenova/all-MiniLM-L6-v2 via @xenova/transformers)',
-      free:       true,
-      requiresAPI: false
+      free:        true,
+      requiresAPI: false,
+      quantized:   true,
     };
   }
 
   // ─── Single embedding ────────────────────────────────────────────
 
   /**
-   * Embed one text string.
-   * @param  {string}   text
-   * @returns {Promise<number[]>}  384-dim vector
+   * Embed one text string → 384-dim vector.
+   * Used for query-time embeddings (one per chatbot request).
    */
   async generateEmbedding(text) {
     this._assertReady();
 
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    if (!text || typeof text !== 'string' || !text.trim()) {
       throw new Error('generateEmbedding: text must be a non-empty string');
     }
 
     const output = await this._extractor(text.trim(), {
       pooling:   'mean',
-      normalize: true
+      normalize: true,
     });
 
-    return Array.from(output.data);
+    // Convert Float32Array → regular array, then release the tensor
+    const vec = Array.from(output.data);
+    output.dispose?.();
+    return vec;
   }
 
-  // ─── Batch embedding ─────────────────────────────────────────────
+  // ─── Batch embedding — memory-optimized ─────────────────────────
 
   /**
    * Embed multiple texts.  Order is preserved: result[i] ↔ texts[i].
-   * Processed in chunks of EMBEDDING_BATCH_SIZE (default 20) to cap
-   * peak memory — though local inference is not API-rate-limited.
+   *
+   * Processes ONE text at a time (EMBEDDING_BATCH_SIZE defaults to 1) to
+   * keep peak ONNX memory low.  Calls global.gc() between texts to
+   * reclaim inference buffers before the next allocation.
    *
    * @param  {string[]}   texts
    * @returns {Promise<number[][]>}  Array of 384-dim vectors
@@ -119,39 +142,75 @@ class EmbeddingService {
       throw new Error('generateEmbeddings: texts must be a non-empty array');
     }
 
-    const batchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE ?? '20', 10);
-    const results   = [];
+    const batchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE ?? '1', 10);
+    const results   = new Array(texts.length);
+    let   processed = 0;
+
+    logMemory(`Embedding start (${texts.length} texts, batch=${batchSize})`);
 
     for (let start = 0; start < texts.length; start += batchSize) {
-      const chunk = texts.slice(start, start + batchSize).map(t => (t ?? '').trim());
+      const end   = Math.min(start + batchSize, texts.length);
+      const chunk = texts.slice(start, end).map(t => (t ?? '').trim());
 
-      // @xenova/transformers accepts a string array directly
-      const output = await this._extractor(chunk, {
-        pooling:   'mean',
-        normalize: true
-      });
+      let vectors;
 
-      // output.data is a flat Float32Array: [dim0…dim383, dim0…dim383, …]
-      const flat = Array.from(output.data);
+      if (chunk.length === 1) {
+        // Single-text path — most memory-efficient
+        const output = await this._extractor(chunk[0], {
+          pooling:   'mean',
+          normalize: true,
+        });
+        vectors = [Array.from(output.data)];
+        output.dispose?.();
+      } else {
+        // Small batch (2+)
+        const output = await this._extractor(chunk, {
+          pooling:   'mean',
+          normalize: true,
+        });
 
-      if (flat.length !== chunk.length * this._dimensions) {
-        throw new Error(
-          `Embedding shape mismatch: expected ${chunk.length * this._dimensions} ` +
-          `floats, got ${flat.length}`
-        );
+        const flat = output.data;
+        const expected = chunk.length * this._dimensions;
+
+        if (flat.length !== expected) {
+          output.dispose?.();
+          throw new Error(`Embedding shape mismatch: expected ${expected}, got ${flat.length}`);
+        }
+
+        vectors = [];
+        for (let i = 0; i < chunk.length; i++) {
+          vectors.push(Array.from(flat.subarray(i * this._dimensions, (i + 1) * this._dimensions)));
+        }
+        output.dispose?.();
       }
 
-      for (let i = 0; i < chunk.length; i++) {
-        results.push(flat.slice(i * this._dimensions, (i + 1) * this._dimensions));
+      // Store results at correct positions
+      for (let i = 0; i < vectors.length; i++) {
+        results[start + i] = vectors[i];
+      }
+
+      processed += chunk.length;
+
+      // Force GC between batches to reclaim ONNX inference buffers.
+      // Only works if Node was started with --expose-gc, which is safe to
+      // call even without it (the optional chaining returns undefined).
+      if (typeof global.gc === 'function') {
+        global.gc();
+      }
+
+      if (texts.length > 3) {
+        logMemory(`Embedded ${processed}/${texts.length}`);
       }
     }
 
-    if (results.length !== texts.length) {
-      throw new Error(
-        `Embedding count mismatch: expected ${texts.length}, got ${results.length}`
-      );
+    // Verify all slots filled
+    for (let i = 0; i < results.length; i++) {
+      if (!results[i]) {
+        throw new Error(`Embedding missing for text at index ${i}`);
+      }
     }
 
+    logMemory(`Embedding complete (${results.length} vectors)`);
     return results;
   }
 
@@ -159,10 +218,10 @@ class EmbeddingService {
 
   _assertReady() {
     if (!this.isReady()) {
-      const hint = this.isInitialized === false
-        ? 'Call await embeddingService.initialize() before use.'
-        : 'Model failed to load — check @xenova/transformers installation.';
-      throw new Error(`Embedding service not ready. ${hint}`);
+      throw new Error(
+        'Embedding service not ready. ' +
+        'Call await embeddingService.initialize() before use.'
+      );
     }
   }
 }

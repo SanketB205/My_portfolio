@@ -26,18 +26,14 @@ const vectorDBStatusRoutes = require('./routes/vectordb-status');
 
 const app = express();
 
-// express-rate-limit keys on req.ip, which is wrong behind a proxy/load
-// balancer unless trust proxy is set — all clients then collapse into one
-// bucket. Set TRUST_PROXY=1 for a single reverse proxy in front of the app.
+// ─── Proxy / rate-limit ──────────────────────────────────────────
 if (process.env.TRUST_PROXY) {
   app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : process.env.TRUST_PROXY);
 }
 
 // ─── Middleware ───────────────────────────────────────────────────
-// Allowed origins: Vercel frontend (set CORS_ORIGIN on Render), plus localhost for dev.
-// CORS_ORIGIN can be a comma-separated list of origins.
 const allowedOrigins = [
-  'http://localhost:5173',   // Vite dev server
+  'http://localhost:5173',
   'http://localhost:3000',
   ...(process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
@@ -45,7 +41,6 @@ const allowedOrigins = [
 ];
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow server-to-server (no origin) and any vercel.app subdomain
     if (!origin || origin.endsWith('.vercel.app') || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -57,10 +52,6 @@ app.use(cors({
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use('/uploads', express.static('uploads'));
-
-// cors() middleware above already handles OPTIONS preflight automatically.
-// No explicit app.options() needed — the rate-limiter per-route workaround
-// in routes/chatbot.js takes care of chatbot-specific preflight.
 
 // ─── Route registration ───────────────────────────────────────────
 app.use('/api/auth',          authRoutes);
@@ -88,23 +79,36 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ─── Memory helper ────────────────────────────────────────────────
+function logMemory(label) {
+  const m = process.memoryUsage();
+  console.log(
+    `[Memory] ${label}: ` +
+    `RSS=${(m.rss / 1048576).toFixed(1)}MB ` +
+    `Heap=${(m.heapUsed / 1048576).toFixed(1)}/${(m.heapTotal / 1048576).toFixed(1)}MB ` +
+    `Ext=${(m.external / 1048576).toFixed(1)}MB`
+  );
+}
+
 // ─── Startup sequence ─────────────────────────────────────────────
-// HTTP server starts immediately after MongoDB so Render health-checks
-// pass during the slow embedding model download.
 async function startServer() {
   try {
+    logMemory('Startup');
+
     // 1. MongoDB — must succeed before we accept requests
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('✅ MongoDB connected —', mongoose.connection.name);
 
-    // 2. Start HTTP server right away so Render health-checks pass
+    // 2. Start HTTP server immediately so Render health-checks pass
     //    and all non-chatbot routes (projects, skills, auth …) are live.
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
 
-    // 3. Embedding model — slow on first run (~25 MB download)
+    // 3. Embedding model — slow on first run (download + load)
+    //    Non-fatal if it fails: chatbot will run without RAG context.
+    logMemory('Before embedding model load');
     const embOk = await embeddingService.initialize();
     if (!embOk) {
       console.warn('⚠  Embedding service failed — chatbot will run without RAG');
@@ -118,33 +122,41 @@ async function startServer() {
 
     // 5. RAG service (depends on 3 + 4)
     if (embOk && vsOk) {
-      const ragOk = await portfolioRagService.initialize();
-      if (!ragOk) {
-        console.warn('⚠  RAG service failed — chatbot will run without portfolio context');
-      }
+      await portfolioRagService.initialize();
     }
 
     // 6. Auto-seed vector store from MongoDB if empty.
-    //    Render’s filesystem is ephemeral: the index.json is wiped on every
+    //    Render's filesystem is ephemeral: index.json is wiped on every
     //    redeploy/restart, so documentCount is always 0 on a fresh boot.
-    //    We re-build it automatically so the chatbot has portfolio context
-    //    without any manual intervention.
+    //
+    //    CRITICAL: this runs in the BACKGROUND (not awaited) so the process
+    //    stays alive and serves health-checks even if indexing is slow.
+    //    The chatbot will gracefully return "I don't have that information"
+    //    until the index is populated, then start answering correctly.
     if (embOk && vsOk) {
-      try {
-        const { indexPortfolioDocuments } = require('./services/portfolioIndexer');
-        const storeStats = await vectorStore.getStats();
+      // Defer to next tick so the event loop can process pending requests
+      setImmediate(async () => {
+        try {
+          const { indexPortfolioDocuments } = require('./services/portfolioIndexer');
+          const storeStats = await vectorStore.getStats();
 
-        if (storeStats.documentCount === 0) {
-          console.log('🔄 Vector store is empty — auto-seeding from MongoDB...');
-          const result = await indexPortfolioDocuments();
-          console.log(`✅ Auto-seed complete — ${result.indexed}/${result.totalDocuments} documents indexed`);
-        } else {
-          console.log(`ℹ️  Vector store already has ${storeStats.documentCount} document(s) — skipping auto-seed`);
+          if (storeStats.documentCount === 0) {
+            console.log('🔄 Vector store is empty — auto-seeding from MongoDB (background)...');
+            const result = await indexPortfolioDocuments();
+            if (result.failed > 0) {
+              console.error(`⚠  Auto-seed completed with ${result.failed} failure(s)`);
+            } else {
+              console.log(`✅ Auto-seed complete — ${result.indexed}/${result.totalDocuments} documents indexed`);
+            }
+          } else {
+            console.log(`ℹ️  Vector store already has ${storeStats.documentCount} document(s) — skipping auto-seed`);
+          }
+        } catch (seedErr) {
+          // Non-fatal: server stays up, chatbot runs without RAG context
+          console.error('⚠  Auto-seed failed (chatbot will run without RAG context):', seedErr.message);
+          logMemory('Auto-seed failure');
         }
-      } catch (seedErr) {
-        // Non-fatal: chatbot works without RAG context
-        console.error('⚠  Auto-seed failed (chatbot will run without RAG context):', seedErr.message);
-      }
+      });
     }
 
   } catch (err) {

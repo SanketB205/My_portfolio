@@ -21,12 +21,14 @@
 const portfolioRagService = require('../services/portfolioRagService');
 
 // ─── Gemini model priority list ──────────────────────────────────
-// Try models in order; fall back to the next on error.
-// gemini-2.0-flash-lite is the lightest/fastest, good for chatbots.
+// Google periodically deprecates model names. Error messages from the
+// API itself recommend these replacements (as of Sept 2026):
+//   gemini-2.5-flash     → gemini-3.8-flash
+//   gemini-2.0-flash-lite → gemini-3.5-flash-lite
 const CANDIDATE_MODELS = [
-  { name: 'gemini-2.0-flash',      thinking: false },
-  { name: 'gemini-2.0-flash-lite', thinking: false },
-  { name: 'gemini-1.5-flash',      thinking: false },
+  { name: 'gemini-3.8-flash',       thinking: false },
+  { name: 'gemini-3.5-flash-lite',  thinking: false },
+  { name: 'gemini-2.5-flash',       thinking: false },
 ];
 
 // ─── System prompt template ──────────────────────────────────────
@@ -139,6 +141,10 @@ const chatWithBot = async (req, res) => {
           ? { maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } }
           : { maxOutputTokens: 500 };
 
+        // Timeout: abort if Gemini takes more than 20 seconds
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
+
         const response = await fetch(endpoint, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -147,7 +153,8 @@ const chatWithBot = async (req, res) => {
             contents,
             generationConfig,
           }),
-        });
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeout));
 
         if (!response.ok) {
           let errorMsg = response.statusText;
