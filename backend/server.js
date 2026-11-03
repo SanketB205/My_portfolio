@@ -58,6 +58,20 @@ app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use('/uploads', express.static('uploads'));
 
+// Respond to ALL preflight requests immediately after CORS middleware.
+// This prevents rate-limiters or auth middleware from intercepting OPTIONS
+// and stripping the CORS headers that cors() already set above.
+app.options('*', cors({
+  origin: (origin, callback) => {
+    if (!origin || origin.endsWith('.vercel.app') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
+  credentials: true,
+}));
+
 // ─── Route registration ───────────────────────────────────────────
 app.use('/api/auth',          authRoutes);
 app.use('/api/projects',      projectRoutes);

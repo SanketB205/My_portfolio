@@ -21,11 +21,12 @@
 const portfolioRagService = require('../services/portfolioRagService');
 
 // ─── Gemini model priority list ──────────────────────────────────
-// Models that support thinkingConfig (set to true); others get plain config
+// Try models in order; fall back to the next on error.
+// gemini-2.0-flash-lite is the lightest/fastest, good for chatbots.
 const CANDIDATE_MODELS = [
-  { name: 'gemini-3.6-flash',     thinking: true  },
-  { name: 'gemini-3.5-flash-lite', thinking: false },
-  { name: 'gemini-flash-latest',  thinking: false },
+  { name: 'gemini-2.0-flash',      thinking: false },
+  { name: 'gemini-2.0-flash-lite', thinking: false },
+  { name: 'gemini-1.5-flash',      thinking: false },
 ];
 
 // ─── System prompt template ──────────────────────────────────────
