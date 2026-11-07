@@ -3,6 +3,11 @@ import axiosInstance from '../utils/axiosInstance'
 // Bundled fallback — only used when the backend has NO uploaded profile image
 import fallbackProfileImg from '../assets/ChatGPT Image Sep 11, 2026, 08_21_05 PM.png'
 
+// Build the base URL for direct downloads (same logic as axiosInstance)
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api'
+
 export default function Hero() {
   const [activeResume, setActiveResume] = useState(null)
   const [profileSrc, setProfileSrc] = useState(null)   // null = API still fetching
@@ -103,7 +108,7 @@ export default function Hero() {
               </a>
               {activeResume ? (
                 <a
-                  href={`/api/resume/download/${activeResume._id}`}
+                  href={`${API_BASE}/resume/download/active`}
                   download={activeResume.originalName}
                   className="bg-white hover:bg-gray-50 text-black border border-black font-medium rounded-full px-7 py-3.5 text-sm sm:text-base transition-colors duration-200 shadow-xs inline-flex items-center justify-center gap-2"
                 >
