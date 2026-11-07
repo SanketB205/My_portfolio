@@ -40,15 +40,18 @@ const upload = multer({
   }
 });
 
-// GET active resume (public route)
+// GET active resume metadata (public route)
+// Excludes fileData to keep the response lightweight
 router.get('/active', async (req, res) => {
   try {
-    const resume = await Resume.findOne({ isActive: true }).sort({ uploadedAt: -1 });
-    
+    const resume = await Resume.findOne({ isActive: true })
+      .sort({ uploadedAt: -1 })
+      .select('-fileData');
+
     if (!resume) {
       return res.status(404).json({ message: 'No active resume found' });
     }
-    
+
     res.json(resume);
   } catch (error) {
     console.error('Error fetching active resume:', error);
@@ -57,9 +60,12 @@ router.get('/active', async (req, res) => {
 });
 
 // GET all resumes (protected route)
+// Excludes fileData to keep the response lightweight
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const resumes = await Resume.find().sort({ uploadedAt: -1 });
+    const resumes = await Resume.find()
+      .sort({ uploadedAt: -1 })
+      .select('-fileData');
     res.json(resumes);
   } catch (error) {
     console.error('Error fetching resumes:', error);
@@ -73,7 +79,7 @@ router.post('/', authMiddleware, upload.single('resume'), async (req, res) => {
     console.log('========================================');
     console.log('📄 NEW RESUME UPLOAD REQUEST');
     console.log('========================================');
-    
+
     if (!req.file) {
       console.log('❌ No file uploaded');
       return res.status(400).json({ message: 'No file uploaded' });
@@ -81,6 +87,9 @@ router.post('/', authMiddleware, upload.single('resume'), async (req, res) => {
 
     console.log('File received:', req.file.originalname);
     console.log('File size:', req.file.size, 'bytes');
+
+    // Read file into a Buffer so it persists in MongoDB
+    const fileData = fs.readFileSync(req.file.path);
 
     // Deactivate all previous resumes
     await Resume.updateMany({}, { isActive: false });
@@ -92,15 +101,19 @@ router.post('/', authMiddleware, upload.single('resume'), async (req, res) => {
       filePath: req.file.path,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
+      fileData: fileData,
       isActive: true
     });
 
     const savedResume = await resume.save();
-    console.log('✅ Resume saved successfully!');
+    console.log('✅ Resume saved successfully (file stored in MongoDB)!');
     console.log('Resume ID:', savedResume._id);
     console.log('========================================\n');
 
-    res.status(201).json(savedResume);
+    // Return response without the binary data
+    const responseObj = savedResume.toObject();
+    delete responseObj.fileData;
+    res.status(201).json(responseObj);
   } catch (error) {
     console.error('========================================');
     console.error('❌ ERROR UPLOADING RESUME');
@@ -109,13 +122,13 @@ router.post('/', authMiddleware, upload.single('resume'), async (req, res) => {
     console.error('========================================\n');
 
     // Clean up uploaded file if database save failed
-    if (req.file && req.file.path) {
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
 
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Error uploading resume',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -133,7 +146,7 @@ router.patch('/:id/activate', authMiddleware, async (req, res) => {
       req.params.id,
       { isActive: true },
       { new: true }
-    );
+    ).select('-fileData');
 
     if (!resume) {
       return res.status(404).json({ message: 'Resume not found' });
@@ -152,14 +165,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     console.log('Deleting resume:', req.params.id);
 
-    const resume = await Resume.findById(req.params.id);
-    
+    const resume = await Resume.findById(req.params.id).select('-fileData');
+
     if (!resume) {
       return res.status(404).json({ message: 'Resume not found' });
     }
 
-    // Delete file from filesystem
-    if (fs.existsSync(resume.filePath)) {
+    // Delete file from filesystem (if it still exists)
+    if (resume.filePath && fs.existsSync(resume.filePath)) {
       fs.unlinkSync(resume.filePath);
       console.log('✅ File deleted from filesystem');
     }
@@ -176,6 +189,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 });
 
 // DOWNLOAD active resume directly (public route — no ID needed)
+// Serves the file from MongoDB binary data (survives Render restarts)
 router.get('/download/active', async (req, res) => {
   try {
     const resume = await Resume.findOne({ isActive: true }).sort({ uploadedAt: -1 });
@@ -184,31 +198,53 @@ router.get('/download/active', async (req, res) => {
       return res.status(404).json({ message: 'No active resume found' });
     }
 
-    if (!fs.existsSync(resume.filePath)) {
-      return res.status(404).json({ message: 'Resume file not found on server' });
+    // Serve from MongoDB binary data
+    if (resume.fileData && resume.fileData.length > 0) {
+      res.set({
+        'Content-Type': resume.mimeType || 'application/pdf',
+        'Content-Disposition': `attachment; filename="${resume.originalName}"`,
+        'Content-Length': resume.fileData.length
+      });
+      return res.send(resume.fileData);
     }
 
-    res.download(resume.filePath, resume.originalName);
+    // Fallback: try filesystem (for old uploads before this change)
+    if (resume.filePath && fs.existsSync(resume.filePath)) {
+      return res.download(resume.filePath, resume.originalName);
+    }
+
+    return res.status(404).json({ message: 'Resume file not found on server' });
   } catch (error) {
     console.error('Error downloading active resume:', error);
     res.status(500).json({ message: 'Error downloading resume' });
   }
 });
 
-// DOWNLOAD resume (public route)
+// DOWNLOAD resume by ID (public route)
 router.get('/download/:id', async (req, res) => {
   try {
     const resume = await Resume.findById(req.params.id);
-    
+
     if (!resume) {
       return res.status(404).json({ message: 'Resume not found' });
     }
 
-    if (!fs.existsSync(resume.filePath)) {
-      return res.status(404).json({ message: 'File not found' });
+    // Serve from MongoDB binary data
+    if (resume.fileData && resume.fileData.length > 0) {
+      res.set({
+        'Content-Type': resume.mimeType || 'application/pdf',
+        'Content-Disposition': `attachment; filename="${resume.originalName}"`,
+        'Content-Length': resume.fileData.length
+      });
+      return res.send(resume.fileData);
     }
 
-    res.download(resume.filePath, resume.originalName);
+    // Fallback: try filesystem
+    if (resume.filePath && fs.existsSync(resume.filePath)) {
+      return res.download(resume.filePath, resume.originalName);
+    }
+
+    return res.status(404).json({ message: 'File not found' });
   } catch (error) {
     console.error('Error downloading resume:', error);
     res.status(500).json({ message: 'Error downloading resume' });

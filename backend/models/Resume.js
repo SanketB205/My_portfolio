@@ -11,7 +11,7 @@ const resumeSchema = new mongoose.Schema({
   },
   filePath: {
     type: String,
-    required: true
+    default: ''
   },
   fileSize: {
     type: Number,
@@ -19,6 +19,10 @@ const resumeSchema = new mongoose.Schema({
   },
   mimeType: {
     type: String,
+    required: true
+  },
+  fileData: {
+    type: Buffer,
     required: true
   },
   isActive: {
