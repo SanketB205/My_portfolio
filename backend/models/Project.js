@@ -34,6 +34,11 @@ const projectSchema = new mongoose.Schema({
     default: null,
     trim: true
   },
+  thumbnailPublicId: {
+    type: String,
+    default: null,
+    trim: true
+  },
   order: {
     type: Number,
     default: 0

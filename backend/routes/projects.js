@@ -3,34 +3,55 @@
 const express        = require('express');
 const router         = express.Router();
 const multer         = require('multer');
-const path           = require('path');
-const fs             = require('fs');
 const Project        = require('../models/Project');
 const authMiddleware = require('../middleware/auth');
 const ragSync        = require('../services/portfolioRagSyncService');
+const cloudinary     = require('../utils/cloudinary');
 
-// ─── Multer — thumbnail uploads ───────────────────────────────────
-const thumbnailDir = path.join(__dirname, '../uploads/thumbnails');
-if (!fs.existsSync(thumbnailDir)) fs.mkdirSync(thumbnailDir, { recursive: true });
-
-const thumbnailStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, thumbnailDir),
-  filename:    (_req,  file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'thumb-' + unique + path.extname(file.originalname));
-  }
-});
-
+// ─── Multer — memory storage (no disk writes on Render) ───────────
 const thumbnailUpload = multer({
-  storage:    thumbnailStorage,
-  limits:     { fileSize: 5 * 1024 * 1024 },   // 5 MB
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 5 * 1024 * 1024 },   // 5 MB
   fileFilter: (_req, file, cb) => {
-    const allowed = /jpeg|jpg|png|webp/i;
-    const ok = allowed.test(path.extname(file.originalname)) &&
-               allowed.test(file.mimetype.split('/')[1]);
-    ok ? cb(null, true) : cb(new Error('Only JPG, PNG, or WEBP images are allowed'));
+    const allowed = /^image\/(jpeg|jpg|png|webp)$/i;
+    if (allowed.test(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPG, PNG, or WEBP images are allowed'));
+    }
   }
 });
+
+// ─── Helper: upload buffer to Cloudinary via upload_stream ────────
+function uploadToCloudinary(buffer, options = {}) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder:          'portfolio/projects',
+        resource_type:   'image',
+        transformation:  [{ quality: 'auto', fetch_format: 'auto' }],
+        ...options
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
+// ─── Helper: safely delete a Cloudinary image by public_id ────────
+async function deleteFromCloudinary(publicId) {
+  if (!publicId) return;
+  try {
+    await cloudinary.uploader.destroy(publicId);
+    console.log('☁️  Cloudinary image deleted:', publicId);
+  } catch (err) {
+    // Non-fatal — log but don't throw
+    console.error('⚠  Failed to delete Cloudinary image:', publicId, err.message);
+  }
+}
 
 // ─── Public ───────────────────────────────────────────────────────
 
@@ -119,7 +140,8 @@ router.post('/', authMiddleware, async (req, res) => {
       year:         year         || new Date().getFullYear(),
       featured:     featured     || false,
       order:        assignedOrder,
-      thumbnail:    null
+      thumbnail:    null,
+      thumbnailPublicId: null
     });
 
     const saved = await project.save();
@@ -172,16 +194,15 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE — delete project (also remove thumbnail file if present)
+// DELETE — delete project (also clean up Cloudinary thumbnail)
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const project = await Project.findByIdAndDelete(req.params.id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    // Clean up thumbnail file from disk
-    if (project.thumbnail) {
-      const filePath = path.join(__dirname, '..', project.thumbnail.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    // Clean up Cloudinary thumbnail
+    if (project.thumbnailPublicId) {
+      deleteFromCloudinary(project.thumbnailPublicId);
     }
 
     // Respond immediately — RAG sync runs in the background (non-blocking)
@@ -196,12 +217,17 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// ─── Protected — Thumbnail ────────────────────────────────────────
+// ─── Protected — Thumbnail (Cloudinary) ───────────────────────────
 
 /**
  * POST /api/projects/:id/thumbnail
  * Upload or replace a thumbnail for a project.
  * Accepts: multipart/form-data  field name: "thumbnail"
+ *
+ * Safe replacement strategy:
+ *   1. Upload new image to Cloudinary first
+ *   2. Update MongoDB with new URL/publicId
+ *   3. Delete old Cloudinary image only after DB update succeeds
  */
 router.post('/:id/thumbnail', authMiddleware, (req, res, next) => {
   thumbnailUpload.single('thumbnail')(req, res, (err) => {
@@ -220,44 +246,61 @@ router.post('/:id/thumbnail', authMiddleware, (req, res, next) => {
 
     const project = await Project.findById(req.params.id);
     if (!project) {
-      // Clean up uploaded file if project not found
-      fs.unlinkSync(req.file.path);
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    // Delete the previous thumbnail file if one existed
-    if (project.thumbnail) {
-      const old = path.join(__dirname, '..', project.thumbnail.replace(/^\//, ''));
-      if (fs.existsSync(old)) fs.unlinkSync(old);
+    // Remember old public ID for cleanup after successful update
+    const oldPublicId = project.thumbnailPublicId || null;
+
+    // 1. Upload to Cloudinary
+    console.log(`☁️  Uploading thumbnail for project "${project.title}" to Cloudinary...`);
+    const result = await uploadToCloudinary(req.file.buffer, {
+      public_id: `project-${project._id}-${Date.now()}`
+    });
+    console.log('☁️  Cloudinary upload success:', result.public_id);
+
+    // 2. Update MongoDB with Cloudinary URL
+    project.thumbnail         = result.secure_url;
+    project.thumbnailPublicId = result.public_id;
+    await project.save();
+    console.log('✅ Project thumbnail updated in MongoDB');
+
+    // 3. Delete old image from Cloudinary (only after DB update succeeded)
+    if (oldPublicId && oldPublicId !== result.public_id) {
+      deleteFromCloudinary(oldPublicId);
     }
 
-    // Store as a URL path relative to the server root
-    project.thumbnail = `/uploads/thumbnails/${req.file.filename}`;
-    await project.save();
-
-    res.json({ thumbnail: project.thumbnail, message: 'Thumbnail uploaded successfully' });
+    res.json({
+      thumbnail:         project.thumbnail,
+      thumbnailPublicId: project.thumbnailPublicId,
+      message:           'Thumbnail uploaded successfully'
+    });
   } catch (error) {
     console.error('Error uploading thumbnail:', error);
-    // Clean up file if DB save failed
-    if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({ message: 'Error uploading thumbnail' });
+    res.status(500).json({ message: 'Error uploading thumbnail', error: error.message });
   }
 });
 
 /**
  * DELETE /api/projects/:id/thumbnail
- * Remove the thumbnail from a project and delete the file.
+ * Remove the thumbnail from a project and delete from Cloudinary.
  */
 router.delete('/:id/thumbnail', authMiddleware, async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
+    const publicIdToDelete = project.thumbnailPublicId;
+
     if (project.thumbnail) {
-      const filePath = path.join(__dirname, '..', project.thumbnail.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      project.thumbnail = null;
+      project.thumbnail         = null;
+      project.thumbnailPublicId = null;
       await project.save();
+    }
+
+    // Delete from Cloudinary after DB update
+    if (publicIdToDelete) {
+      deleteFromCloudinary(publicIdToDelete);
     }
 
     res.json({ message: 'Thumbnail removed successfully' });

@@ -46,6 +46,7 @@ function ProjectThumbnail({ project }) {
           src={url}
           alt={`${project.title} thumbnail`}
           className="w-full h-full object-cover"
+          loading="lazy"
           onError={() => setImgError(true)}
         />
       ) : (

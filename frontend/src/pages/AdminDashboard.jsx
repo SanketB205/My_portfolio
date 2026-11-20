@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import axiosInstance from '../utils/axiosInstance'
-import { Plus, Pencil, Trash2, X, Upload, ImageOff, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Upload, ImageOff, ChevronUp, ChevronDown, RefreshCw, Loader2 } from 'lucide-react'
 import ResumeManager from '../components/ResumeManager'
 import ProfileImageManager from '../components/ProfileImageManager'
 import CertificationManager from '../components/CertificationManager'
@@ -23,7 +23,7 @@ import {
 //   onStage       – callback(file, previewDataUrl)
 //   onRemove      – callback() — clear staged or existing
 //   error         – validation error string
-function ThumbnailUploadSection({ existingUrl, stagedFile, stagedPreview, onStage, onRemove, error }) {
+function ThumbnailUploadSection({ existingUrl, stagedFile, stagedPreview, onStage, onRemove, error, uploadProgress, isUploading }) {
   const inputRef = useRef(null)
   const displayUrl = stagedPreview || existingUrl
 
@@ -69,25 +69,39 @@ function ThumbnailUploadSection({ existingUrl, stagedFile, stagedPreview, onStag
             alt="Thumbnail preview"
             className="w-full h-full object-cover"
           />
-          {/* Overlay buttons */}
-          <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="flex items-center gap-1.5 px-4 py-2 bg-white text-black rounded-full text-xs font-semibold hover:bg-gray-100 transition-colors shadow"
-            >
-              <Upload size={13} />
-              Replace
-            </button>
-            <button
-              type="button"
-              onClick={onRemove}
-              className="flex items-center gap-1.5 px-4 py-2 bg-white text-red-600 rounded-full text-xs font-semibold hover:bg-red-50 transition-colors shadow"
-            >
-              <ImageOff size={13} />
-              Remove
-            </button>
-          </div>
+          {/* Upload progress overlay */}
+          {isUploading ? (
+            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-3">
+              <Loader2 size={28} className="text-white animate-spin" />
+              <div className="w-3/4 bg-white/30 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-white h-full rounded-full transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <span className="text-white text-xs font-medium">{uploadProgress}% uploading…</span>
+            </div>
+          ) : (
+            /* Hover overlay buttons */
+            <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-white text-black rounded-full text-xs font-semibold hover:bg-gray-100 transition-colors shadow"
+              >
+                <Upload size={13} />
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={onRemove}
+                className="flex items-center gap-1.5 px-4 py-2 bg-white text-red-600 rounded-full text-xs font-semibold hover:bg-red-50 transition-colors shadow"
+              >
+                <ImageOff size={13} />
+                Remove
+              </button>
+            </div>
+          )}
           {/* "Staged" badge */}
           {stagedFile && (
             <span className="absolute top-2 left-2 px-2 py-0.5 bg-black text-white text-[10px] font-semibold rounded-full">
@@ -150,6 +164,8 @@ export default function AdminDashboard() {
   const [thumbExistingUrl,   setThumbExistingUrl]   = useState(null)
   const [thumbRemoved,       setThumbRemoved]       = useState(false)
   const [thumbError,         setThumbError]         = useState('')
+  const [thumbUploading,     setThumbUploading]     = useState(false)
+  const [thumbProgress,      setThumbProgress]      = useState(0)
 
   // RAG reindex state
   const [ragIndexing, setRagIndexing] = useState(false)
@@ -191,6 +207,8 @@ export default function AdminDashboard() {
     setThumbExistingUrl(null)
     setThumbRemoved(false)
     setThumbError('')
+    setThumbUploading(false)
+    setThumbProgress(0)
   }
 
   const handleMoveProject = async (index, direction) => {
@@ -308,11 +326,19 @@ export default function AdminDashboard() {
           await deleteProjectThumbnail(savedProjectId).catch(console.error)
         }
         if (thumbStagedFile) {
-          // Upload new / replacement thumbnail
-          await saveProjectThumbnail(savedProjectId, thumbStagedFile).catch(err => {
+          // Upload new / replacement thumbnail to Cloudinary
+          setThumbUploading(true)
+          setThumbProgress(0)
+          try {
+            await saveProjectThumbnail(savedProjectId, thumbStagedFile, (pct) => setThumbProgress(pct))
+          } catch (err) {
             console.error('Thumbnail upload failed:', err)
+            setThumbUploading(false)
             setThumbError('Project saved, but thumbnail upload failed. Try again from Edit.')
-          })
+            await fetchProjects()
+            return // Don't close form — show error
+          }
+          setThumbUploading(false)
         }
       } else {
         // ── CREATE ──────────────────────────────────────────────
@@ -320,10 +346,18 @@ export default function AdminDashboard() {
         savedProjectId = res.data._id
 
         if (thumbStagedFile) {
-          await saveProjectThumbnail(savedProjectId, thumbStagedFile).catch(err => {
+          setThumbUploading(true)
+          setThumbProgress(0)
+          try {
+            await saveProjectThumbnail(savedProjectId, thumbStagedFile, (pct) => setThumbProgress(pct))
+          } catch (err) {
             console.error('Thumbnail upload failed:', err)
-            setThumbError('Project saved, but thumbnail upload failed. Try again from Edit.')
-          })
+            setThumbUploading(false)
+            setThumbError('Project created, but thumbnail upload failed. Edit the project to retry.')
+            await fetchProjects()
+            return
+          }
+          setThumbUploading(false)
         }
       }
 
@@ -685,6 +719,8 @@ export default function AdminDashboard() {
                 onStage={handleThumbStage}
                 onRemove={handleThumbRemove}
                 error={thumbError}
+                uploadProgress={thumbProgress}
+                isUploading={thumbUploading}
               />
 
               {/* Submit error */}
@@ -698,9 +734,11 @@ export default function AdminDashboard() {
               <div className="flex items-center gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-black hover:bg-neutral-800 text-white font-medium rounded-full py-3 text-sm transition-colors duration-200"
+                  disabled={thumbUploading}
+                  className="flex-1 bg-black hover:bg-neutral-800 text-white font-medium rounded-full py-3 text-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                 >
-                  {editingProject ? 'Update Project' : 'Save Project'}
+                  {thumbUploading && <Loader2 size={16} className="animate-spin" />}
+                  {thumbUploading ? 'Uploading thumbnail…' : editingProject ? 'Update Project' : 'Save Project'}
                 </button>
                 <button
                   type="button" onClick={closeForm}
