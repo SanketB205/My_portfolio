@@ -70,9 +70,17 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
 });
 
-// Error handler
+// Error handler — ensure CORS headers are present even on errors
 app.use((err, req, res, next) => {
   console.error(err.stack);
+
+  // Re-apply CORS headers so browsers don't mask the real error
+  const origin = req.headers.origin;
+  if (origin && (origin.endsWith('.vercel.app') || allowedOrigins.includes(origin))) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Access-Control-Allow-Credentials', 'true');
+  }
+
   res.status(500).json({
     message: 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined

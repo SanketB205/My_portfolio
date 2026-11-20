@@ -244,6 +244,12 @@ router.post('/:id/thumbnail', authMiddleware, (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No image file uploaded' });
 
+    // Guard: ensure Cloudinary is configured
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      console.error('❌ Cloudinary environment variables are not configured');
+      return res.status(500).json({ message: 'Image hosting is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET on the server.' });
+    }
+
     const project = await Project.findById(req.params.id);
     if (!project) {
       return res.status(404).json({ message: 'Project not found' });
