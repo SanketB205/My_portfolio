@@ -30,6 +30,7 @@ export async function saveProjectThumbnail(projectId, file, onProgress) {
     `/projects/${projectId}/thumbnail`,
     form,
     {
+      headers: { 'Content-Type': undefined },
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
           const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
