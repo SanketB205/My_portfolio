@@ -13,6 +13,7 @@ import axiosInstance from './axiosInstance';
 
 /**
  * Upload (or replace) a thumbnail for a project.
+ * Automatically retries once on transient 502 Bad Gateway errors.
  *
  * @param {string}   projectId     MongoDB _id of the project
  * @param {File}     file          Image File object from <input type="file">
@@ -20,27 +21,47 @@ import axiosInstance from './axiosInstance';
  * @returns {Promise<string>}      The Cloudinary secure URL
  */
 export async function saveProjectThumbnail(projectId, file, onProgress) {
-  const form = new FormData();
-  form.append('thumbnail', file);
+  const makeRequest = (attempt) => {
+    const form = new FormData();
+    form.append('thumbnail', file);
 
-  // Do NOT set Content-Type manually — axios must auto-generate the
-  // multipart/form-data header with the correct boundary, otherwise
-  // Multer cannot parse the request body and rejects with a 400/500.
-  const { data } = await axiosInstance.post(
-    `/projects/${projectId}/thumbnail`,
-    form,
-    {
-      headers: { 'Content-Type': undefined },
-      onUploadProgress: (progressEvent) => {
-        if (onProgress && progressEvent.total) {
-          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          onProgress(percent);
+    return axiosInstance.post(
+      `/projects/${projectId}/thumbnail`,
+      form,
+      {
+        headers: { 'Content-Type': undefined },
+        timeout: 30000,  // 30 s client timeout
+        onUploadProgress: (progressEvent) => {
+          if (onProgress && progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            onProgress(percent);
+          }
         }
       }
-    }
-  );
+    );
+  };
 
-  return data.thumbnail; // Cloudinary secure_url
+  try {
+    const { data } = await makeRequest(1);
+    return data.thumbnail;
+  } catch (err) {
+    // Retry once on transient 502 (Render proxy timeout) or network error
+    const status = err.response?.status;
+    const isTransient = status === 502 || status === 503 || status === 504 || !err.response;
+
+    if (isTransient) {
+      console.warn(`Thumbnail upload attempt 1 failed (${status || 'network error'}), retrying...`);
+      if (onProgress) onProgress(0);
+
+      // Brief pause before retry
+      await new Promise(r => setTimeout(r, 2000));
+
+      const { data } = await makeRequest(2);
+      return data.thumbnail;
+    }
+
+    throw err;
+  }
 }
 
 /**

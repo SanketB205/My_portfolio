@@ -157,6 +157,7 @@ export default function AdminDashboard() {
   })
   const [formErrors,   setFormErrors]   = useState({})
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [submitting,     setSubmitting]     = useState(false)
 
   // Thumbnail state
   const [thumbStagedFile,    setThumbStagedFile]    = useState(null)
@@ -296,7 +297,8 @@ export default function AdminDashboard() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!validateForm()) return
+    if (!validateForm() || submitting) return
+    setSubmitting(true)
 
     try {
       const techStackArray = formData.techStack
@@ -334,6 +336,7 @@ export default function AdminDashboard() {
           } catch (err) {
             console.error('Thumbnail upload failed:', err)
             setThumbUploading(false)
+            setSubmitting(false)
             setThumbError('Project saved, but thumbnail upload failed. Try again from Edit.')
             await fetchProjects()
             return // Don't close form — show error
@@ -353,6 +356,7 @@ export default function AdminDashboard() {
           } catch (err) {
             console.error('Thumbnail upload failed:', err)
             setThumbUploading(false)
+            setSubmitting(false)
             setThumbError('Project created, but thumbnail upload failed. Edit the project to retry.')
             await fetchProjects()
             return
@@ -371,6 +375,8 @@ export default function AdminDashboard() {
         error.message                 ||
         'Failed to save project.'
       setFormErrors({ submit: msg })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -734,11 +740,11 @@ export default function AdminDashboard() {
               <div className="flex items-center gap-3 pt-4">
                 <button
                   type="submit"
-                  disabled={thumbUploading}
+                  disabled={submitting || thumbUploading}
                   className="flex-1 bg-black hover:bg-neutral-800 text-white font-medium rounded-full py-3 text-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                 >
-                  {thumbUploading && <Loader2 size={16} className="animate-spin" />}
-                  {thumbUploading ? 'Uploading thumbnail…' : editingProject ? 'Update Project' : 'Save Project'}
+                  {(submitting || thumbUploading) && <Loader2 size={16} className="animate-spin" />}
+                  {thumbUploading ? 'Uploading thumbnail…' : submitting ? 'Saving…' : editingProject ? 'Update Project' : 'Save Project'}
                 </button>
                 <button
                   type="button" onClick={closeForm}

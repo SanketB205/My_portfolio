@@ -39,15 +39,25 @@ const allowedOrigins = [
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
     : []),
 ];
+
+function isOriginAllowed(origin) {
+  if (!origin) return true;                        // same-origin / server-to-server
+  if (origin.endsWith('.vercel.app')) return true;  // any Vercel preview deploy
+  return allowedOrigins.includes(origin);
+}
+
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || origin.endsWith('.vercel.app') || allowedOrigins.includes(origin)) {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS blocked: ${origin}`));
     }
   },
-  credentials: true,
+  credentials:    true,
+  methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge:         86400   // cache preflight for 24 h — eliminates repeated OPTIONS
 }));
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
@@ -72,17 +82,19 @@ app.get('/api/health', (req, res) => {
 
 // Error handler — ensure CORS headers are present even on errors
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('❌ Unhandled error:', err.message);
+  if (process.env.NODE_ENV === 'development') console.error(err.stack);
 
-  // Re-apply CORS headers so browsers don't mask the real error
+  // Re-apply CORS headers so browsers see the real error, not "CORS blocked"
   const origin = req.headers.origin;
-  if (origin && (origin.endsWith('.vercel.app') || allowedOrigins.includes(origin))) {
+  if (origin && isOriginAllowed(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Access-Control-Allow-Credentials', 'true');
   }
 
-  res.status(500).json({
-    message: 'Something went wrong!',
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    message: err.message || 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });

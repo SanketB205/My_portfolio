@@ -23,20 +23,45 @@ const thumbnailUpload = multer({
 });
 
 // ─── Helper: upload buffer to Cloudinary via upload_stream ────────
+// Includes a timeout to prevent Render's proxy from killing the request
+// with a 502 when Cloudinary is slow to respond.
+const CLOUDINARY_TIMEOUT_MS = 25000; // 25 s — safely under Render's 30 s proxy timeout
+
 function uploadToCloudinary(buffer, options = {}) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('Cloudinary upload timed out after 25 seconds'));
+      }
+    }, CLOUDINARY_TIMEOUT_MS);
+
     const stream = cloudinary.uploader.upload_stream(
       {
         folder:          'portfolio/projects',
         resource_type:   'image',
-        transformation:  [{ quality: 'auto', fetch_format: 'auto' }],
+        timeout:         CLOUDINARY_TIMEOUT_MS,
         ...options
       },
       (error, result) => {
+        if (settled) return;        // timeout already fired
+        settled = true;
+        clearTimeout(timer);
         if (error) return reject(error);
         resolve(result);
       }
     );
+
+    stream.on('error', (err) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      }
+    });
+
     stream.end(buffer);
   });
 }
@@ -241,6 +266,7 @@ router.post('/:id/thumbnail', authMiddleware, (req, res, next) => {
     next();
   });
 }, async (req, res) => {
+  const startTime = Date.now();
   try {
     if (!req.file) return res.status(400).json({ message: 'No image file uploaded' });
 
@@ -259,17 +285,29 @@ router.post('/:id/thumbnail', authMiddleware, (req, res, next) => {
     const oldPublicId = project.thumbnailPublicId || null;
 
     // 1. Upload to Cloudinary
-    console.log(`☁️  Uploading thumbnail for project "${project.title}" to Cloudinary...`);
-    const result = await uploadToCloudinary(req.file.buffer, {
-      public_id: `project-${project._id}-${Date.now()}`
-    });
-    console.log('☁️  Cloudinary upload success:', result.public_id);
+    console.log(`☁️  Uploading thumbnail for project "${project.title}" (${(req.file.size / 1024).toFixed(0)} KB, ${req.file.mimetype})...`);
+    let result;
+    try {
+      result = await uploadToCloudinary(req.file.buffer, {
+        public_id: `project-${project._id}-${Date.now()}`
+      });
+    } catch (uploadErr) {
+      console.error('❌ Cloudinary upload failed:', uploadErr.message);
+      return res.status(502).json({
+        message: 'Image upload to cloud storage failed. Please try again.',
+        error: uploadErr.message
+      });
+    }
+    console.log(`☁️  Cloudinary upload success: ${result.public_id} (${Date.now() - startTime}ms)`);
+
+    // Release the buffer from memory immediately
+    req.file.buffer = null;
 
     // 2. Update MongoDB with Cloudinary URL
     project.thumbnail         = result.secure_url;
     project.thumbnailPublicId = result.public_id;
     await project.save();
-    console.log('✅ Project thumbnail updated in MongoDB');
+    console.log(`✅ Project thumbnail saved in DB (total ${Date.now() - startTime}ms)`);
 
     // 3. Delete old image from Cloudinary (only after DB update succeeded)
     if (oldPublicId && oldPublicId !== result.public_id) {
@@ -282,7 +320,9 @@ router.post('/:id/thumbnail', authMiddleware, (req, res, next) => {
       message:           'Thumbnail uploaded successfully'
     });
   } catch (error) {
-    console.error('Error uploading thumbnail:', error);
+    console.error(`❌ Thumbnail upload error (${Date.now() - startTime}ms):`, error.message);
+    // Release buffer on error too
+    if (req.file) req.file.buffer = null;
     res.status(500).json({ message: 'Error uploading thumbnail', error: error.message });
   }
 });
