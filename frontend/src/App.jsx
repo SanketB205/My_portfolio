@@ -12,6 +12,7 @@ import AdminLogin from './components/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
 import ProtectedRoute from './components/ProtectedRoute'
 import ChatWidget from './components/ChatWidget'
+import { Analytics } from '@vercel/analytics/react'
 
 function PublicPortfolio() {
   return (
@@ -50,6 +51,17 @@ export default function App() {
         {/* AI Chatbot Widget — visible on all pages */}
         <ChatWidget />
       </div>
+      {/* Vercel Web Analytics — mounted once, inside the Router.
+          Page views (including client-side route changes) are tracked
+          automatically by the Vercel script. Admin routes are excluded. */}
+      <Analytics
+        beforeSend={(event) => {
+          if (event.url.includes('/admin')) {
+            return null
+          }
+          return event
+        }}
+      />
     </Router>
   )
 }

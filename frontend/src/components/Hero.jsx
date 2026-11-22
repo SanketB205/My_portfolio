@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import axiosInstance from '../utils/axiosInstance'
+import { trackEvent } from '../utils/analytics'
 // Bundled fallback — only used when the backend has NO uploaded profile image
 import fallbackProfileImg from '../assets/ChatGPT Image Sep 11, 2026, 08_21_05 PM.png'
 
@@ -110,6 +111,7 @@ export default function Hero() {
                 <a
                   href={`${API_BASE}/resume/download/active`}
                   download={activeResume.originalName}
+                  onClick={() => trackEvent('resume_download')}
                   className="bg-white hover:bg-gray-50 text-black border border-black font-medium rounded-full px-7 py-3.5 text-sm sm:text-base transition-colors duration-200 shadow-xs inline-flex items-center justify-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

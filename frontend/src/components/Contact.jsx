@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react'
 import axiosInstance from '../utils/axiosInstance'
+import { trackEvent } from '../utils/analytics'
 
 export default function Contact() {
   const [formData, setFormData] = useState({
@@ -40,6 +41,7 @@ export default function Contact() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    trackEvent('contact_form_submit')
     setStatus({ loading: true, success: false, error: false, message: 'Sending...' })
 
     try {
@@ -210,6 +212,7 @@ export default function Contact() {
                   href={social.href}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => trackEvent('social_link_click', { platform: social.name })}
                   className="bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-full px-5 py-2 shadow-xs hover:bg-black hover:text-white transition-colors duration-200"
                 >
                   {social.name}

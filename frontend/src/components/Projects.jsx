@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react'
 import axiosInstance from '../utils/axiosInstance'
+import { trackEvent } from '../utils/analytics'
 import { getProjectThumbnailUrl } from '../utils/projectThumbnail'
 
 // Character threshold beyond which "Read more" appears
@@ -128,6 +129,7 @@ function ProjectCard({ project }) {
               href={project.githubLink}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackEvent('project_github_click', { title: project.title })}
               className="inline-flex items-center gap-1.5 text-sm font-semibold text-black hover:underline transition-all"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -145,6 +147,7 @@ function ProjectCard({ project }) {
               href={project.liveDemoLink}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackEvent('project_live_demo_click', { title: project.title })}
               className="inline-flex items-center gap-1 text-sm font-semibold text-black hover:underline transition-all"
             >
               <span>Live Demo</span>
